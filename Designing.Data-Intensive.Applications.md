@@ -46,4 +46,60 @@ Every legacy system is unpleasant in its own way.
 Three design principles for software systems:
 1. Operability:Make it easy for operations teams to keep the system running smoothly.
 2. Simplicity: Make it easy for new engineers to understand the system.
-3. Evolvability:Make it easy for engineers to make changes to the system in the future.
+3. Evolvability:Make it easy for engineers to make changes to the system in the future.Also known as extensibility, modifiability, or plasticity.
+#### Operability
+Good operability means having good visibility into the system’s health, and having effective ways of managing it.
+good operations team:
+* monitoring health and restoring service
+* tracking down the cause of problems
+* keep update, security patches
+* keep tabs on how different systems affect each other.一个问题的修改会影响其他的
+* Anticipating future problems and solving them before thewhich initially had a large following but eventually faded into obscurityy occur
+* establish good practices and tools for DEV and OP
+* performing complex maintenance tasks, 比如迁移
+* 维护系统的安全性,比如配置的更改
+* 定义流程使得操作可以预期，保持生产环境的稳定
+* 保留下来系统的相关知识，形成wiki
+#### Simplicity
+Complexity是一种accidental 它不是软件要解决的问题中的本质问题，而是指开发中由于实现而带来的一种意外，常见的解决这种复杂度的方法就是抽象。好的抽象不仅能够减少复杂度，而且有更好的性能。
+#### Evolvability
+Agile敏捷开发，传统敏捷开发的针对的模块规模较小的代码，如何针对大的系统进行，比如对一个重要功能进行重构。我认为需要首先完善相关测试，然后进行逐步的开发重构，对一个功能进行逐步分解，然后每个步骤都进行灰度的替换，通过测试保证重构的代码正确。
+## 2.Data Models and Query Languages
+对于分层，核心问题是：how is it represented in terms of the next-lower layer?把现实表述为Model把，数据表述为Json，table，graph等。数据模型data model决定了后续上层应用的功能，对整个系统有深远的影响，因此选择需要谨慎。
+### Relational Model VS Document Model
+面向对象的编程语言，经常需要转化对象到关系数据库的行和列（impedance mismatch)，因此有了专门做此转化的的框架，hibernate等。但是这还不够方便，后续就有了对象关系数据库，基于Document，存JSON，XML等。
+存ID不存字面，便于后续的改变，由于ID是对人类无意义的，所以任何时候都是ok的，方便国际化，减少冗余。
+Document databases，joins are not needed and often weak.对于上述ID的情况，是一种典型的多对一的场景，关系数据库很方便，利用join，对于Document数据库则不是。对于多对多的情况，类似。
+#### Are Document Databases Repeating History?
+对于上述问题，似乎又无解了。两个好的模型解决：
+* relational model:which became SQL, and took over the world
+采用关系数据库存，you only need to build a query optimizer once, and then all applications that use the database can benefit from it. 以优化器来解决查询优化和查询复杂的问题。
+* network model:which initially had a large following but eventually faded into obscurity一开始火，后来默默无闻
+思路：In the tree structure of the hierarchical model, every record has exactly one parent; in the net‐ work model, a record could have multiple parents.the link just like pointers.In the tree structure of the hierarchical model, every record has exactly one parent; in the net‐ work model, a record could have multiple parents.
+缺点：更新复杂，需要在应用程序中记录这些关系，从而才能查询。
+**现在document数据库一方面以网状存数据，类似于过去，但是当表达多对一，多对多的关系时，这个关系对象，会用一个唯一的标示符identifier引用，类似关系数据模型的外键，或者document model中的document reference。这个identifier用来做join活连续查询**
+#### Relational Versus Document Databases Today
+the document data model are schema flexibility, better performance due to locality
+The relational model counters by providing better support for joins, and many-to-one and many-to-many relationships.
+#### Schema flexibility in the document model
+document databases are schema-on-read!so the traditional approach of relational databases are schema on write.
+#### Data locality for queries
+it is generally recommended that you keep documents fairly small and avoid writes that increase the size of a document.
+grouping related data together for locality:column family concept.
+###  Query Languages for data
+SQL是declarative的，SQL 是根据关系代数的转化而来的，告诉平台你的意图，条件，但是并不说明如何达到这个目标，易于并行化，隐藏了实现细节。普通的编程语言是imperative, 告诉平台具体的操作，和顺序，不容易并行，
+Css是declarative而javascript对应的dom api就是imperative.
+#### MapReduce Querying
+mongodb等有以JSON形式描述的SQL查询。
+### Graph-Like Data Models
+以图形式作为数据模型，比如social graphs，web graph，road or rail networks.图中的点和边，不一定要是相同的。many ways of structuring and querying data in graphs.
+#### Property graphs
+每个点和边都有属性，然后相当于两张关系表，一张是边的，一张是点的，记录他们间的关系。the cypher query Language用来操作这种模型。query的好处在于忽略细节，底层来做查询优化。SQL可以用recursive common table expressions技术来查询关系数据库模型达到上述目的，不过复杂的多。
+#### Triple store
+In a triple-store, all information is stored in the form of very simple three-part state‐ ments: (subject, predicate, object). For example, in the triple (Jim, likes, bananas), Jim is the subject, likes is the predicate (verb), and bananas is the object.
+主谓宾的形式描述事实，主语和宾语是点，谓语就是边
+网页也可以表示这种数据，一个网页可以是一个主语，也可以是一个谓语，这样就连成了一个语义网络。SPARQL query language用来查这种数据模型。
+#### The Foundation:Datalog
+it provides the foundation that later query languages build upon.Instead of writing a triple as (subject, predicate, object), we write it as predicate(subject, object).
+## Storage and Retrieval
+上述的模型，在实践的时候会有些取舍。
