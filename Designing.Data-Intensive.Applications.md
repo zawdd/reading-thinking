@@ -102,4 +102,66 @@ In a triple-store, all information is stored in the form of very simple three-pa
 #### The Foundation:Datalog
 it provides the foundation that later query languages build upon.Instead of writing a triple as (subject, predicate, object), we write it as predicate(subject, object).
 ## Storage and Retrieval
-上述的模型，在实践的时候会有些取舍。
+上述的模型，在实践的时候会有些取舍。会话的处理和分析与查询的优化是两个关键。two engines: log-structured storage engines, and page-oriented storage engines such as B-trees.well-chosen indexes speed up read queries, but every index slows down writes.
+### Hash Indexs
+1. 一开始我们用追加的文件的形式记录数据，然后遍历全部数据查询
+2. 然后我们采用hashmap，保存文件中新写入数据的偏移，然后把hashmap保存在内存中，以此作为索引
+3. 当文件越来越大时，分割文件，每达到一个大小后，就开辟新的文件（segment），老的文件可以压缩（包括删除老的数据）
+4. 压缩后的文件会变小，于是可以再次合并，写入新的文件。合并时查询依然查询原来的文件，完全合并后才删除老的文件，这样也减少了碎片，合并压缩的操作都是后台的。
+**很多阿里，百度的开源系统其实就是继续此思想，但在实现时考虑到更多的细节，每个细节有不同的解决方案，此时需要根据业务需求做trade off**
+如：文件格式（二进制最好），删除数据怎么表示（可以加特殊flag），崩溃后的恢复（内存种的hash表如何恢复：可以定时做snapshot),部分写（类似事务性），并行读写（单线程写，多线程读）
+追加日志方式的优点：
+* 连续写的效率高于随即写
+* 并发和灾难恢复简单（可以理解为写文件写一条数据是个原子操作）
+缺点：
+* hash table必须要能放入内存
+* 连续key的范围查询效率低，因为每个key都要走hash
+### SSTables and LSM-Trees
+上述文件中的key，要让其有序，并不会破会顺序写，叫做Sorted String Table，一个key在一个segment文件中只出现一次。优点：
+1. 便于合并，由于有序，内存中装不下也好合并。key相同时，由于segment生成的时间有先后，可以用来决定保留那个key的值。
+2. 内存中保存的不是所有的key，类似B＋树，只是部分key，由于有顺序，找到一个key后可以再顺序找具体的key，这样减少了内存中要维护的hashmap的大小
+3. 两个key之间的范围的keyvalues可以压缩成一个block，这样，内存中的key指向的就是这样的block，由于压缩，也减少了IO的带宽。
+#### Constructing and maintaining SSTables
+how get the data sorted by key in the first place.在磁盘上采用B树，内存中采用红黑树，AVL树，都可以以任意顺序插入，然后顺序读。
+先写内存中写一个树，写大一定大小，才写到文件。读的时候需要从内存中的数据开始查找，然后以此每个segment，后台再定时合并压缩segment。为了防止崩溃，内存中的数据消失，就先写一个log，当所有内存的数据都写到磁盘上时，这个log就可以清除。
+#### Making an LSM-tree out of SSTables
+Log Structured Merge Tree,building on Log-structured filesystems,这种基于合并和压缩排序文件的叫做LSM存储引擎。Lucene就是其中一个应用，
+优化问题：
+1. 当key不存在时，需要遍历所有的segment，为了解决，引入了Bloom filters，布隆过滤器
+2. 两种压缩与合并的策略，size-tiered and leveled  compaction:In size-tiered com‐ paction, newer and smaller SSTables are successively merged into older and larger SSTables. In leveled compaction, the key range is split up into smaller SSTables and older data is moved into separate “levels,” which allows the compaction to proceed more incrementally and use less disk space.
+### B Trees
+把数据库分为固定大小的blocks或pages，每次读写一块，类比硬盘。每个page可以存别的page的位置作为索引，一个节点指向几个叶子叫做branching factor,由数据量和key的范围决定，通常是几百。大多数数据库B树就4层，(A four-level tree of 4 KB pages with a branching factor of 500 can store up to 256 TB.)，为了防止写时出错，程序崩溃，采用WAL，write ahead log/redo log。还要考虑并行写时的枷锁问题。
+#### BTrees optimizations
+1. Copy On Write策略，帮助并行写和crash recover
+2. key可以缩写以减少空间，一个page中跟的key，必定再其上面的索引的范围内
+3. 叶子的page如果能连续，性能会好，但是比较难
+4. 叶子page加上其前后page的指针，帮助scanning in order
+### Comparing B-Trees and LSM-Trees
+B-Trees faster for read, and LSM faster for write,但需要根据特定的业务去选择合适的。
+LSM后台会进行压缩合并，在高分位的写压力的请款下会有影响，因为硬件的性能有限，而且这种处理过程是无法预期的，这点不如BTree，由于BTree中一个key只存在一个地方，所以数据库多用此存储引擎，便于实现事务。
+### Other indexing structures
+构建secondary index，很多value有同一个key，处理方法：This can be solved in two ways: either by making each value in the index a list of matching row identifiers (like a postings list in a full-text index) or by making each key unique by appending a row identifier to it. Either way, both B-trees and log-structured indexes can be used as secondary indexes.
+clustered index (storing all row data within the index) 解决读时需要根据指针找value的问题
+#### Multicolumn indexes
+concatenated index, which simply combines several fields into one key by appending one column to another。比如经纬度的检索，Btree和LSMtree不适合，对于此特例用RTree
+#### Full-text search and fuzzy indexes
+Lucene底层基于SStable，内存中，有有限状态机Levenshtein automation，支持给定一个编辑举例后的词的检索
+### Transaction Processing or analytics
+OLTP（低延迟少数据量的读写）和OLAP（大数据量的查询，批量倒入数据ETL，或流式倒入数据）
+### Data Warehousing
+专门用于OLAP，数据仓库针对数据分析对索引以及存储引擎都做了专门的优化。
+#### The divergence between OLTP databases and data warehouses
+SQL good for analytices, so use relational data model. drill-down and slicing and dicing.商业数据仓库Teradata, Vertica, SAP HANA, and ParAccel ，开源的：Apache Hive, Spark SQL, Cloudera Impala, Facebook Presto, Apache Tajo, and Apache Drill [52, 53]. Some of them are based on ideas from Google’s Dremel
+#### Stars and Snowflakes:  Schemas for Analytics
+数据残酷的数据模型比较单一，star schema (also known as dimen‐ sional modeling [55]).由许多真实的数据库表，构成一个可供查询的fact table，里面的key都是外键，其他的表围绕着这个fact table，所有叫star table
+#### Column-Oriented Storage
+基于OLAP每次查询需要的列只有几列，所以以列存储，查询时不需要读取所有的数据。列存储不只是关系数据库才有，非关系也可以用列存储。
+#### Column Compression
+基于列存储，就很容易压缩，采用bitmap encoding，除了压缩，爱便于列条件的过滤，and就是位AND，in就是位OR，同样列有利于CPU的处理，以此读取一串进入L1 cache，这叫做vectorized processing
+#### Sort Order in Column Storage
+列排序，底层可以按照SSTable的思想，每个列中每行的对应关系不能变。每份数据按一个顺序存，这样，各种排序时可以受益。原始数据保存在一处，其他的索引指向指针，指针找数据。
+#### writing to column oriented Storage
+采用LSM tree，先在内存中写，然后再和磁盘原有的数据，merge成新的文件。
+#### aggregation
+materialized views, 把聚合后的结果直接存储，便于查询，但是写复杂。一种特例叫做data cube。
+## Encoding and Evolution
