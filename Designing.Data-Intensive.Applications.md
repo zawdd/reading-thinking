@@ -101,7 +101,7 @@ In a triple-store, all information is stored in the form of very simple three-pa
 网页也可以表示这种数据，一个网页可以是一个主语，也可以是一个谓语，这样就连成了一个语义网络。SPARQL query language用来查这种数据模型。
 #### The Foundation:Datalog
 it provides the foundation that later query languages build upon.Instead of writing a triple as (subject, predicate, object), we write it as predicate(subject, object).
-## Storage and Retrieval
+## 3.Storage and Retrieval
 上述的模型，在实践的时候会有些取舍。会话的处理和分析与查询的优化是两个关键。two engines: log-structured storage engines, and page-oriented storage engines such as B-trees.well-chosen indexes speed up read queries, but every index slows down writes.
 ### Hash Indexs
 1. 一开始我们用追加的文件的形式记录数据，然后遍历全部数据查询
@@ -165,3 +165,35 @@ SQL good for analytices, so use relational data model. drill-down and slicing an
 #### aggregation
 materialized views, 把聚合后的结果直接存储，便于查询，但是写复杂。一种特例叫做data cube。
 ## Encoding and Evolution
+作为服务端的程序，需要考虑rolling upgrade or known as staged rollout,作为客户端程序，要考虑到客户可能不更因，即都要考虑一个兼容问题。
+Backward compatibility
+Newer code can read data that was written by older code.
+Forward compatibility
+Older code can read data that was written by newer code.
+而这里既有代码的兼容，也有数据的兼容，于是不同的格式数据有不同的用途
+### Formats for Encoding Data
+* 内存中，各种对象，表，数组，hash，树，都是针对CPU优化的
+* 为了持久化，需要编码内存的数据。
+一个语言中的序列化和语言耦合太紧，而且为了能反序列化，解码程序需要能够实力化任何类，这有安全问题，可以远程代码执行，而且效率低，又无法forward和backward compatibility
+### JSON,XML and Binary Variants
+解决上述的同时，问题：编码的信息有歧义，比如数字和字符串，数字无法指示精度，位数类型。JSON XML对二进制字符串支持不好。所以有了Base64，但增长了33％，CSV格式，no schema。
+#### Binary Encoding
+把JSON等用二进制编码减少空间
+#### Thrift and Protocol Buffers
+Thrift from facebook and Protocol buffers from google, Thrift has two different encoding format, one is binaryProtocol other is CompactProtocol. Compact的方法，利用没个字节的高位的0个1表示这个数据是否后面还有数字。protocolbuffer和compact的类似。required和optional的配置对具体编码没有影响，是运行时的一个检查。
+只要不是required的字段的变动，schema可以前向后向兼容。proto不需要类型，thrift需要存类型。
+#### Avro
+由于thrift not fit for hadoop's use case.严格依赖定义的schema来解析，可以有一个writer schema和一个reader schema，avro来做翻译，把写的和读的schema中的字段对应上，为了前向和后向兼容，定义的字段要有默认值，这样翻译时发现缺少了字段可以用默认值。
+当用在数据库时，可以每个record维护一个版本号，一个版本号对应一个schema，这样reader就知道用正确的writer的schema了。
+一个优势，Avro不含有tag number，因此更适合动态生成schema，不需要考虑哪个tag number对不对
+### The Merits of Schemas
+## Modes of Dataflow
+为了传输数据需要对数据编码成二进制，之后考虑传输，传输有databases, service calls, asynchronous message passing这三个方式
+### Dataflow through databases
+前向兼容和后向兼容的编码，当其经过应用程序后，转化为对象，再序列化，会丢失新增的field。数据会活的比代码久 data outlives code
+### Dataflow through services :REST and RPC
+Service oriented architecture SOA就是现在所谓的微服务。A key design goal of a service-oriented/microservices architecture is to make the application easier to change and maintain by making services independently deploya‐ ble and evolvable.
+RPC有种种缺陷，区别于本地调用，但是近来也有新的更新，比如采用Protocol buffer等作为RPC的协议，显示的区别local function。RPC的性能会比REST好，通常用在同一个组织的，同一个数据中心中。为了sever和client的版本兼容，请求中可以加上版本号。
+### Message Passing Dataflow
+RabbitMQ, ActiveMQ, Hor‐ netQ, NATS, and Apache Kafka。采用Actor model，一个actor处理一条消息，有利于多线程并发的设计。
+## Distributed Data
