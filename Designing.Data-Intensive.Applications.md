@@ -197,3 +197,30 @@ RPC有种种缺陷，区别于本地调用，但是近来也有新的更新，�
 ### Message Passing Dataflow
 RabbitMQ, ActiveMQ, Hor‐ netQ, NATS, and Apache Kafka。采用Actor model，一个actor处理一条消息，有利于多线程并发的设计。
 ## Distributed Data
+three reasons:
+1.Scalability
+2.Fault tolerance/high availability
+3.Latency (users around the world)
+### Scaling to Higher Load
+share memory architecture: limited to a single geographic location
+share disk architecture: contention and the overhead of locking limit the Scalability
+### Shared nothing architectures
+also called horizontal scaling,
+### Replication VS Partitioning
+There are two common ways data is distributed across multiple nodes:
+* Replication
+Keeping a copy of the same data on several different nodes, potentially in differ‐ ent locations. Replication provides redundancy: if some nodes are unavailable, the data can still be served from the remaining nodes. Replication can also help improve performance.
+There are two common ways data is distributed across multiple nodes:
+* Partitioning
+Splitting a big database into smaller subsets called partitions so that different par‐ titions can be assigned to different nodes (also known as sharding).
+这两个机制经常配合使用
+## Replication
+three popular algorithms:single-leader, multi-leader, and leaderless replication, 复制数据最大的问题就是要处理数据的变化
+### Leaders and Followers
+how do we ensure that all the data ends up on all the rep‐ licas?The most common solution for this is called leader-based replication (also known as active/passive or master–slave replica‐ tion)
+### Synchronous Versus Asynchronous Replication
+可以兼顾这两者，更新5个子节点，如果由3个返回就可以返回了，另外两个异步。纯异步的依然用的很多，当子节点够多时，失败的风险就很小了。
+异步最大的缺点是learder失败时会丢数据，还有就是数据一致性的问题，确定不同的值该用哪一个。微软用了chain replication来解决这个问题，
+### Setting Up New Followers
+问题：同步数据给新节点时，不能通过增加锁来牺牲高可用性
+解决：1. 获取数据库某一时刻的快照，2 复制快照到新节点，3，新节点向leader请求快照后的增量（生成快照也打在leader的log里，就能区分那些数据是快照后的）4. 新节点追上所有的数据后认为启动完成
