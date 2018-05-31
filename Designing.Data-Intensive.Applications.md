@@ -224,3 +224,110 @@ how do we ensure that all the data ends up on all the rep‐ licas?The most comm
 ### Setting Up New Followers
 问题：同步数据给新节点时，不能通过增加锁来牺牲高可用性
 解决：1. 获取数据库某一时刻的快照，2 复制快照到新节点，3，新节点向leader请求快照后的增量（生成快照也打在leader的log里，就能区分那些数据是快照后的）4. 新节点追上所有的数据后认为启动完成
+### Handling Node Outages断电
+1. 节点恢复
+2. leader failover, 探测leader失败，选择新的leader，重新配置新系统使得使用新leader，旧的leader即使恢复也要成为节点。
+* 如果采用异步复制，新leader可能没有全部数据。之后旧leader上线后，新leader数据会不一致。这里一般会放弃旧leader中的unreplicated的数据
+* 放弃discard数据会有风险，有可能这部分数据已经被别的系统使用了，比如自增的mysql主键，从而会冲突
+* 防止脑裂，发现两个leader自动杀掉一个，若此机制设置不好又会杀掉两个leader,**如果机器够多，恢复机制完善不如两个都杀了省事**
+* 通过超时判断leader是否live的超时时间的设置
+因为这些的复杂性，所以有时候即使有自动恢复的机制也用手动的
+## Implementation of Replication Logs
+几种不同的replication方法的实践
+### Statement-based replication
+leader把所有写操作的语句日志发给子节点，让其执行，其中的问题：
+>执行失败怎么办？是否需要等待每个子节点都更新成功才返回？ 执行成功的才入log，后者是复制机制的问题
+
+* 使用了非确定结果的语句结果可能不一致，比如NOW，RANDOM等函数
+* 需要严格的保证执行顺序，因为语句之间可能会有依赖，这在有多个并行执行的事务时很难保证
+* 语句的副作用side effects，在不同的副本上可能会不一致，比如triggers，函数等
+解决：leader替换所有不确定的函数的call为固定的返回结果，不过有很多边界条件，因此该方案不是首选的。
+### Write-ahead log (WAL) shipping
+这里的log发的是记录到leader上的数据，然后同步发给子节点，利用只追加的日志。这里的日志就是底层数据，两者格式一样。问题在于这种日志太大了，几乎相当于存储的一倍。主从节点的软件版本要一致，不然新版本的数据，老版本就无法处理了。如果复制协议可以兼容不同的版本，就能online升级，否则只能offline升级整个系统
+### Logical(row based) log replication
+对于复制日志，和本地存储用不一样的log，从而复制协议的log和存储引擎解耦。把变化的数据，以行的形式记录到复制日志（logical log）然后下发给其他的节点，其实就像用中文告诉每一个节点怎么更新数据。对于事务增加一个标示，指明之后的几行是事务mysql的binlog采用这种方式。便于其他应用程序处理复制log
+### Trigger-based replication
+利用trigger探测数据的改变，然后交由其他应用来处理数据的复制，这种方法更灵活，可以控制那部分数据需要复制，还能加入一些其他的逻辑，但是负载高，而且容易出bug，比起利用存储引擎内置的复制机制。
+## Problems with Replication Lag
+复制数据不仅为了容错，提供高可用性，还有就是提供扩展能力，提供低延迟的数据访问。因此要解决复制的滞后问题。
+对于读扩展的架构，可以增加节点，提升读的性能，但是需要异步复制机制，否则一个节点的同步写失败，会导致整个写不可用，节点越多越可能出问题。所以完全同步的复制机制不现实。
+因此采用异步复制，但是导致短期数据主从不一致，但是最终一致。一般要做到1s以下。
+当主从延迟会出的问题：
+### Reading Your Own Writes
+用户刚提交的数据，要给用户展示出来，要保证read after write consistency，解决方法：
+1. 当读取用户会更改的数据时从leader上读
+2. 当大多数数据用户都可以改时，要增加规则，比如最新更新的数据从leader上读
+3. 客户端可以记录最新更新的时间，这样去子节点读时，发现没有这个时间的就去别的副本上读，否则一致等待数据。
+4. 当有多个数据中心时，就要路由到包含此leader的中心上去
+还要保证跨设备的一致性，
+1. 跨设备不容易知道最近的数据更新时间了，需要一个集中的服务，记录这个时间
+2. 不同设备可能连的不是同一个数据中心，leader都不一样，需要先路由到同一个leader
+### Monotonic Reads
+主从延迟会导致moving backward in time现象，先读了一个低延迟的从库，然后读了一个高延迟的从库，时光倒流了看起来。monotonic reads比强一致性弱，比最终一致性要强。如果用户的一系列请求读到了新的数据，则不再去读老的数据。做法，保证一个用户总是从一个副本读取数据，这就是通常为什么用userid或hash路由，而不是随机
+### Consistent Prefix Reads
+主从延迟，导致第三者观察A，B俩者的信息时会出现因果倒置。Consistent Prefix Reads保证，如果写操作是有顺序的，那么任何读这些写操作的，都需要保证顺序。分布式DB中常见，由于每个partition操作是独立的，没有全局的写顺序。解决：保证有因果关系的写在同一个partition，但是这比较难。有算法显式的跟踪因果依赖
+## Solutions for Replication Lag
+如果最终一致性解决不了问题，那就需要考虑强一致性。假设是同步复制考虑问题，而事实上用异步复制。应用程序应不要关注这个问题，让DB保证，DB利用事务保证强一致性
+## Multi-Leader Replication
+单个leader一旦失败，整个系统都无法写
+### Use Cases for multi leader Replication
+当多个数据中心时可以多个leader一个中心一个，否则多leader的复杂性比收益小。致命缺点可能会写冲突。还有如自增key，触发器等性质也会由于多leader而带来问题。所以还是应该尽量避免muti leader
+#### Clients with offline operations
+用户线下的操作需要后期同步到服务端，如果每个设备上都有一个calendar，则每一个设备都是一个local的存储，都是一个leader。于是这也是一个multi leader的问题，该问题没有很好的解决
+#### Collaborative editing
+实时的协作编辑，又许多utomatic conflict resolution方面的研究，这也是一个mutil leader的问题，会导致写冲突，一般就是加锁，可以更细粒度，更段时间的加锁。
+### Handling Write Conlicts
+#### Synchronous versus asynchronous conflict detection
+把异步检测冲突变成的同步的，然后就可以提示其中一个写的用户，目前已经有冲突了，但这样又失去了multi leader多用户共同在线编辑的优势
+#### Conflict avoidance
+避免冲突，使得一个用户创建的数据都走一个leader，别人修改这个数据也要走同一个leader，问题是数据的leader有可能改变。
+#### Converging toward a consistent state
+数据最终趋于一致，解决方法：
+1. 每个写操作赋予唯一ID，最后一个ID作为写的赢家，可以写，last write wins （LWW）缺点会造成数据丢失
+2. 给每一个副本一个唯一ID写只写到最高ID的副本上，问题同1
+3. 把修改的值merge到一起，同时披露出来（局限性太强）
+4. 把冲突记录下来，并交由后来的用户处理
+#### Custom conflict resolution logic
+让用户来定义这种multi leader的应用应该如何处理在读／写时的冲突，冲突解决方案一般只应用在row或者document的粒度，而不是整个事务
+#### What is a Conflict
+冲突的种类，有的比如两个人同时写一个字段，这种比较容易发现，还有比如两个人同时预定一个会议室，这种就难以发现，类似订票之类的，在multi leader下更容易出问题，后面会讨论。
+### Multi-Leader Replication Topologies
+写操作在依据不同的传播规则在多个leader间传递，比如星型拓扑，树状拓扑，环状拓扑，全部点对点的toplogy等，点对点拓扑会使得消息的顺序错乱，其他的拓扑则当节点fail时需要复杂的手动恢复，为了防止点对点时写顺序错乱，采用version vectors技术。很多multi leader的数据库并不保证检测冲突，使用时需要谨慎。
+## Leaderless replication
+Amazon Dynamo 数据库，没有leader，每个client都可以写，不能保证写的顺序。
+### Writing to the database when a node is down
+无leader的数据库在读的时候也会同时并行的读每个节点，取版本最新的数据
+#### Read repair and anti entropy
+需要保证最终一致性，若实效节点重新上线后应该如何获取其已经错过的写操作呢？两个机制
+1. Read repair，读的时候修复版本落后的数据
+2. anti-entropy process,有一个后台程序发现每个副本间的不同，然后复制修改，和基于log，基于leader的架构不同，这种复制不会有顺序，也不保证延迟。
+#### Quorums for reading and writing
+读写要保证有规定比例的实例返回正确才人为成功，w+r>n保证读写的节点至少有一个是一样的，最新版本的数据才能被读到。这个数字需要根据读写的特征调整，当写少读多时，可以w＝n r＝1减少读的时间，请求会发到所有的节点，w，r只是等待返回的个数。
+### Limitations of Quorum Consistency
+设置Quorum只用读写有至少一个node是overlap的就行，并不强制要求w，r都要超过n/2，所以有时候会设置较小的w和r，这样当网络大面积不稳定时，有超过n/2的节点有问题时，读写请求依然可以返回，虽然有概率会读到旧版本的数据，但总比不可用强。
+即使设置了w＋r>n也并不能一定保证是正确的，比如并发写时的冲突，读写同时进行时，部分写失败时读
+所以还需要很多其他的优化，只有w r不能保证服务一定是可用的。要保证最终一致性。
+#### monitoring staleness
+由于写没有顺序，监控难做，但是仍要监控当前有多少节点的数据是旧的，从而知道当前系统是有网络问题，或者负载过大。
+### Sloppy quorums and hinted handoff
+leaderless的系统适合，读延迟低，兼容独立节点失败，能够容忍都到旧数据的应用。
+当网络中断，节点数目达不到quorums时面临一个trade off
+* Is it better to return errors to all requests for which we cannot reach a quorum of w or r nodes?
+* Or should we accept writes anyway, and write them to some nodes that are reachable but aren’t among the n nodes on which the value usually lives?
+后者就是sloppy quorums，比如当写时需要w个节点，当前没有w个了，就从其他能用的节点里（不在原来的n个中）挑选来写，等到网络恢复后再把这个临时写的给写回到原来规定的w个节点中取，这个叫做hinted handoff。这种方案就不能保证读时至少能够读到一个最新的值，但是可用性高很多，所以目前的设计中很多数据库都会采用。
+#### Multi datacenter operation
+leaderless also suitable for multi datacenter
+### Detecting Concurrent writes
+无leader和multi leader的问题一样，写的顺序会不一致，会有写失败，都导致了写冲突，为了实现最终一致性怎么办？（给每个数据增加版本号？）
+* Last write wins：很难定义顺序谁先谁后，并发写时有的节点的写的结果由于顺序落后会被丢掉，但是返回给客户端的还是成功。LWW用在缓存上可以，用在数据不能丢失的冲突解决方案中就不行了。或者保证每次只写一次，即给操作定义一个UUID
+* The happens before relationship and Concurrency
+如何定义顺序和并发，若有后一个操作依赖前一个，那么就是有顺序的，并不依赖时间戳来判断，只有判断的两个操作的顺序类型，才能知道是要处理顺序问题还是并发问题。
+1. 如何发现顺序关系？
+每次操作增加版本号，读数据时除了返回所有的数据，还要返回最后的数据版本号，读的客户端根据它上次已知的版本号可以读出写之前的数据，写操作时也需要提交它上次的读的版本号，然后进行数据merge。带版本号的写就是有顺序的，如果写时不带任何版本号，那么就是和其他写是并行的
+2. merging concurrently written values
+保证不会丢失数据，然是需要客户端做额外的merge工作在写的时候，这个merge的工作通过好的数据结构和设计能够做到自动化，比如Riak的CRDT
+3. Version vectors
+上述是只有一个副本，当有多个副本时，版本号就变成了版本号向量（类似vesrion clock），Riak中用到dotted version vector，版本号用来让服务器知道是overwrite还是concurrent write。
+### Summary
+Single-leader replication is popular because it is fairly easy to understand and there is no conflict resolution to worry about. Multi-leader and leaderless replication can be more robust in the presence of faulty nodes, network interruptions, and latency spikes—at the cost of being harder to reason about and providing only very weak consistency guarantees.
+## Chapter 6 Partitioning
