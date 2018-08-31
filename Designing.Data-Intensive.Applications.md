@@ -214,7 +214,7 @@ There are two common ways data is distributed across multiple nodes:
 * Partitioning
 Splitting a big database into smaller subsets called partitions so that different par‐ titions can be assigned to different nodes (also known as sharding).
 这两个机制经常配合使用
-## Replication
+## Chapter 5 Replication
 three popular algorithms:single-leader, multi-leader, and leaderless replication, 复制数据最大的问题就是要处理数据的变化
 ### Leaders and Followers
 how do we ensure that all the data ends up on all the rep‐ licas?The most common solution for this is called leader-based replication (also known as active/passive or master–slave replica‐ tion)
@@ -331,3 +331,148 @@ leaderless also suitable for multi datacenter
 ### Summary
 Single-leader replication is popular because it is fairly easy to understand and there is no conflict resolution to worry about. Multi-leader and leaderless replication can be more robust in the presence of faulty nodes, network interruptions, and latency spikes—at the cost of being harder to reason about and providing only very weak consistency guarantees.
 ## Chapter 6 Partitioning
+真对事务处理，还是数据分析，会导致不同的设计和调优
+### Partitioning and replication
+这两者通常是配合的
+### Partitioning of Key-Value Data
+为了均匀分布用随机分配，但是随机的缺点是查询时不知道一个具体的partition在那个node上，必须要query所有的node
+* Partitioning by key range
+会导致热点，优点可以根据返回查询几个node不用全部
+* Partitioning by hash of key
+一致性hash为了balance partition，hash后排序性会丢失，而且也要query所有的node，可以把两者结合，比如userid作为hash partition，后面再跟timespan作为key range partition。
+### Skewed workloads and relieving hot spots
+当一个keyid是热点时，进行hash不会有所帮助。底层数据库通常不管，由上曾业务系统增加一个逻辑解决这类热点问题。但是为了分布写的压力，在读上就要进行额外的操作。
+### Partitioning and secondary indexes
+The problem with secondary indexes is that they don’t map neatly to partitions. There are two main approaches to partitioning a database with secondary indexes: document-based partitioning and term-based partitioning.
+* Partitioning secondary Indexes by Document
+每一个partition有其自己的secondary index，读时不友好，请求需要并发到所有的partition
+* Partitioning secondary Indexes by term
+有一个global secondary index，再把这个index做partition，也就是说secondary index在一个partition中只有一部分，但是这一部分中的每一个key都是对应了全部的数据，该方案写的时候需要有事务，通常做成异步的
+### Rebalancing partitions
+至少要满足三个需求，rebalancing后所有流量均衡，负载均衡时读写不能受影响，应该尽可能快，带宽占用尽可能的少，不要移动不必要的数据
+#### Strategies for Rebalancing
+* how not to do it: hash mod N
+N一旦变化，所有的partition都要变化，代价太大，所以一版都是把hash后的key根据range分配到不同的节点上
+* fixed number of partitions
+设计一个远大于节点数目的partitions数目，然后把一批partitions分到一个node上，partitions不能太多也不能太少，这在数据集会变化的情况下，是不容易设计的
+* dynamic Partitioning
+初始化时设置一定的partition，除了基于key ranged，也可以基于hash partition。
+* Partitioning proportionally to nodes
+每一个节点分片不一样，如果增加数据，节点的分片就分裂，有算法避免分割的不均衡
+#### Operations: Automatic or Manual Rebalancing
+自动化的rebalancing，需要管理员确认。全自动的会出现不可预测性，rebalancing操作代价会很大（比如流量高峰期的时候触发均衡，就不如夜间流量低峰的时候手工触发），有一个节点坏了时候，又会触发rebalancing，系统的负载就会更大。
+### Request Routing
+如何知道一个key在那个节点，请求的分发，也是服务发现的问题。
+1. 随机发请求到一个节点，让该节点去判断转发请求到那个节点
+2. 请求发给一个router模块，然后让该模块决策发到那个节点
+3. 客户端直接知道发请求到那个节点，不要中间模块
+the key problem is: how does the component making the routing decision (which may be one of the nodes, or the routing tier, or the client) learn about changes in the assignment of partitions to nodes.
+需要所有的节点都要满足一致性和正确性，节点rebalancing后的信息要能正确同步到所有的节点包括router，client上。比如采用zookeeper把节点信息注册到zk上，zk节点有变动时会通知到所有的订阅者。
+或者采用gossip protocol，在集群中同步变化，然后请求发到任意一个节点就能被再次正确路由，每个节点实现会复杂，但是避免了一个额外的zk服务。
+若没有自动化的rebalancing则设计就会简单许多，只要有一个模块保存这种分区配置就可以了。
+### Parallel Query Execution
+把复杂的jion filtering，group的请求经过分析成若干查询过程，其中部分就可以进行并行执行。尤其是当扫描的数据量大时。
+## Transactions
+前面提到的分布式中要考虑的很多问题，其实事务就是解决和保证他们不出问题的一种机制。但是事务本身是为了简化编程的模型。
+### The Slippery Concept of a Transaction
+很多nosql的数据库，都以分布式，可扩展性为理由，不支持事务。
+#### The Meaning of ACID
+一个数据库所实现的ACID和另一个的不一定相同，所以一个数据库宣称自己实现了完全的ACID，细节却不一定。BASE： Basically Available, Soft state, and Eventual consistency
+* Atomicity
+ACID中的原子性和多线程的不一样
+* Consistency
+是一个应用中的概念，对数据来说只有原子性，独立性。
+* Isolation
+并发执行的操作，每一个是互相独立的。经典数据库往往吧isolation转化为serializability。但是会有性能问题。所以会实现弱的isolation，如snapshot isolation
+* Durability
+单机上，意味着数据持久化了，多副本意味着每个副本都同步了写的操作。不存在绝对的持久化，都可能会出问题。需要多种技术配合使用，以减少每个单独技术失效的风险
+#### Single Object and Multi Object operations
+多个操作如何判断属于同一个事务，一般通过客户端自己写BEGIN COMMIT，同时每个事务还会有独立的ID，用另外的TCP连接传输。对于菲关系型数据库一般没这个保证
+* Single-Object Writes
+单个数据的更新也要保证一致性，原子性，但是这个并不叫做事务
+* The need for multi-Object Transactions
+不能只用single的代替multi的
+* Handling errors and aborts
+对于事务，失败后重试是一个简单有效的策略，但是却不完美，比如事务已经完成了，比如由于负载重导致的错误，有副作用的事务，等等
+### Weak Isolation levels
+数据库提供的事务独立性，使得应用屏蔽了复杂的并发问题。为了性能考虑，不能串行化，所以用Weak Isolation，尽管方案更复杂，但依然用在实践中，以下是几种若的独立性的方案
+#### Read Committed
+* No dirty Reads
+不会度取脏数据，读的谁都是commited的，如果一个数据被修改了还没有committed，则读的是其之前的数值。一个事务committed前对其他事务不可见。
+* No dirty Writes
+写的数据都是被committed的，通过推迟第二个写的事务。
+该方案不能防止，两个计数器修改的问题
+* Implementing Read Committed
+为了阻止脏写，采用行级别的锁。为了阻止脏读，同样用锁，但是如果和写用一个锁，会导致写长实践阻塞读，所以大多数方案是，对于在写的数据同时保存新值和旧值。对于读的请求都给旧值。
+#### Snapshot Isolation and Repeatable Read
+Reads committed会导致短暂的不一致，但是有些憧憬不能接受，比如back up等，所以采用snapshot isolation 每一个事务肚脐一个consistent snapshot，适合于long runing，read only queries，用在MYsql的InnoDB存储中
+* implementing snapshot isolation
+用读锁来解决脏读的问题，会阻塞写。读的时候不用锁，读不会阻塞写，写不会阻塞读。同一个对象，数据库要保存多个commited的版本，MVCC。每个数据上都会根据事务id追加版本信息，这样每行数据其实多了两列，一个是created by一个是deleted by。删除的时候不真的删，只是标记，后续垃圾回收机制再删除。
+* visibility rules for observing a consistent snapshot
+当读的事务请求时，根据设定的可见性规则，来判断哪个事务的数据版本是这个读可见的。比如在读之后的写事务id，中断的写事务id都是不可见的
+* Indexs and snapshot isolation
+传统是对于所有版本的数据建索引，只不过根据版本信息做索引时的过滤，但是有许多优化的方法。比如update时不修改原page，而创建一个新的page，然后父节点指向新的page（数据库底层时B树），这叫做append only B tree，只要没有写操作影响就不用复制。这样每个写的事务都会创建新的一棵树（其实里面很多节点都是公共的，只有新写的节点才复制，不会复制那么多数据的），每次查询时根据版本查指定的树，就不需要过滤了。需要有垃圾回收机制。
+* repeatable read and namming confusion
+Oracle中这个技术叫做Serializable ，PostgreSQl MYSQL中叫做 repeatable read。
+#### Preventing Lost updates
+并发写导致的问题，lost update ，读-修改-写的俩事务并发，就会导致有一个clobbers另一个。
+* Atomic Write operations
+原子的更新操作，防止了应用层的read-modify-write的模式，但是并不是所有的写操作都可以用原子修改的方式重写。如果可以原子更新的方式通常是最好的。通常用锁实现原子更新，或者所有的原子操作放在一个线程中，
+* Explicit locking
+应用层实现显示的锁，防止lost update。有可能会忘记在应用层加锁，并且会导致race condition
+* Automatically detecting lost updates
+允许事务并行，但是数据库自动检测，如果有lost update，就阻止这个事务，然后会再顺序执行read modify write的事务，Mysql不支持，好处在于应用层可以不考虑lost update，但是出现这种情况时，会有性能损失。
+* Compare-and-set
+不支持事务的数据库，通常支持原子的比较set操作，防止lost update。但是如果数据库实现了snapshot isolation，这个compare set也会不安全，会读到old snapshot的值。就不知道别人已经修改了当前值，还是会lost update
+* Conflict resolution and replication
+对于多副本的，有多leader或者无leader的数据库，加锁，compare set技术都不适用，要采用Linearizability技术。原子操作支持可交换性，多个写操作的顺序可以交换而不改变最后的结果，基于此Riak实现no update lost
+### Write Skew and Phantoms
+除了dirty writes和updates lost并发写还会导致其他的race condtion。
+比如write skew，同时更新两个对象，但是却导致某一个条件不成立了，比如值班医生不能少于1人，上述方法对这个问题都不好，在snapshot isolation 下只有严格的顺序执行能避免这个问题，通过加锁，增加约束也可以一定的解决，但是有些情况解决不了。这种情况会很多，比如网站起名字，同时两个人起相同的名字。
+* Phantoms causing write Skew
+一般都会select然后判断满足条件再修改，另一个事务修改的东西，影响到了第一个事务的select的结果，这种情况叫做phantoms
+* materializing conflicts
+把phantoms转化成数据库具体的可以加锁的列，有时候很难做这样的转化
+### Serializability
+Serializable isolation is usually regarded as the strongest isolation level.相比与weak isolation.用以下三个技术来实现顺序化的隔离性。目前讨论的都是单节点，多节点也可以扩展
+#### Actual Serial Execution
+单线程顺序执行每个事务。可行性：RAM便宜，内存数据库。OLTP事务通常都是小数据量的读写，长时间运行的一般都是读。VoltDB/H-Store Redis Datomic采用了这种机制。避免了锁和条件竞争，性能可能会比并行还好。吞吐受限于单个CPU核。为了尽量利用单线程的性能，还需要重新组织事务的格式。
+* Encapsulating transactions in stored procedures
+OLTP服务中，避免事务中在不断的轮询，等待应用输入数据，和应用进行网络交互，导致大量的事务闲置，如果只有单线程处理，这就会严重阻塞，影响性能。单线程的数据库中，不支持这种多交互的事务，必须一次提交全部事务SQL。这就叫做stored procedure。避免了等待网络和IO
+* pros and cons of stored procedures
+不好的地方：存储过程 语言不友好，缺乏库支持，每个数据库有自己的语言。不好debug，版本控制，部署，测试，监控，因为都是在数据库中执行的，不是在应用程序中。一个复杂的存储过程会吃掉大部分性能，导致影响用此数据库的其他应用的性能。这些都可以克服。比如Redis用Lua写存储过程，VoltDB会把存储过程在每个节点都执行。
+* Partitioning
+单线程写会有性能问题，这就需要分表，这样每一个事务就作用在一个partition，但是跨分区的事务就会需要额外的步骤，会慢，还无法水平扩展性能。
+#### Two phase locking（2PL）
+**两段锁和两段提交不同** 写操作不仅会阻塞其他的写，还会阻塞其他的读，和snapshot isolation中的要求不一样了。由于两段锁提供了顺序性，所以前面的各种race condition都不存在了。
+* Implementation of two-phase locking
+应用在Mysql InnoDB，SQL server，对象上有锁 in shared mode or in exclusive mode。共享锁，独占锁。共享锁大家都是加，但是只要有一个独占锁，共享都不能加。要写时必须获得独占锁，读时必须获得共享锁，先读后写操作，需要升级锁。一旦持有一个锁只有事务结束了才能释放。两段的含义就是，获取锁执行，和事务结束释放锁。这会导致死锁，数据库会自己检测并且杀死其中一个事务。
+* Performance of two phase locking
+性能差，减少了并发度。并且有的等待输入的事务会执行很长时间，其他的事务都阻塞了。死锁也会导致性能差。
+* Predicate locks
+解决Phantoms问题，对query的条件加锁，防止另一个事务更改第一个事务先前query的结果，类似要预测别的事务会phantom的修改该事务query的结果，所以这个锁叫做predicate lock
+* Index range locks
+predicate lock不work。所以大多实现2PL的采用index range lock（next key locking ),扩大了上面预测锁的范围，对索引加锁，这样其他事务基于此索引的query就不能执行了，就不用担心被phatom修改数据了。如果找不到适当的index，就会对整个表加shared lock
+#### Serializable Snapshot Isolation （SSI）
+完全的顺序化，性能牺牲小，2008年提出。单节点中和分布式中都有应用，PostgreSQl9.2版本后实现了SSI
+* Pessimistic versus optimistic concurrency control
+2PL是悲观的并发控制机制，SSI是乐观的，一个事务提交的时候，再检查是否有错误发生。只有顺序化的事务才能提交。乐观机制，有利有弊极端情况会导致大量事务重试，从而加重负载。事务间的竞争通过原子操作的交换来减少。所有的读，都是读的一致的snapshot，在top snapshot isolation，SSI增加了一个算法，检测顺序写的冲突，然后决定那个事务会被中断。
+* Decisions based on an outdated premise
+query请求的结果，其他事务会修改，导致outdate，如果事务中一个写操作依赖于这种premise query，就有可能会被中断。判断一个query的结果是否会变化：
+1. Detecting stale MVCC reads（uncommitted write occurred before the read）
+事务提交时，检查是否有其他事务的被忽略的写操作，还没有提交，如果有则事务中断（*从检查完，到提交这中间依然会有间隙，说不定正好此时数据改了，原子化此操作，加锁？compare set机制？*）
+2. Detecting writes that affect prior reads (the write occurs after the read)
+采用类似index range lock的思想，对索引或表加锁，不过SSI lock不会阻塞其他事务，这个锁只有事务执行时有，所有并发事务执行完就消失了。当一个事务有写操作时，需要检查这些锁，这里没有阻塞，只是一个提醒，这个索引上别的事务读过数据，现在你在修改，先提交的事务不会失败，第二个写的事务，就会发现有冲突。（*一行数据上有写版本号，也有读版本号，写的是本来snapshot带来了，ssi增加了一个读的版本信息，若顺序是T1R，T2R，T1W，则T2W要commit时，就会发现这四个版本不成顺序了，就有问题，顺序的只能是先T1，再T2，或者相反，不能互相穿插*）
+* Performance of serializable snapshot isolation
+上述的SSI锁的粒度会影响性能，相比于2PL，事务不用阻塞等，like snap isolation，写不会阻塞读，读不会阻塞写，适合读多的应用。对于写的应用，也不限于单CPU核心，FoundationDB，采用SSI，应用到分布式，吞吐很高。SSI期望读写事务都比较短，但相比于2PL要求没那么高，性能上线可以预期。
+## The Trouble with Distributed Systems
+### Faults and Partial Failures
+不确定性的部分失败导致了分布式系统的复杂性
+### Cloud Computing and Supercomputing
+### Detecting faults
+网络出问题时，路由失败返回ICMP Destination Unreachable，或者进程crash，没有监听指定端口时，返回RST/FIN
+### Timeouts and Unbounded delays
+网络的拥堵有多方面，交换机有队列，cpu的处理也有队列，尤其在虚拟机环境，多个虚拟机用一个物理CPU。这些排队都会导致延迟。
+### Synchronous Versus Asynchronous Networks
+为什么不能在硬件上设计的使得网络有一个最大延迟，并且不会丢包呢？这样软件不久很好设计了么？（困难并没有转移吧，硬件依然有和软件相同的困难，而且有的环境还不需要这样大代价的硬件）电话网络是一个这样可信的网络，连接建立的时候就分出来了一部分给这个连接的带宽资源，这样通信的连接数目就会有限制。这种网络叫做同步网络，网络中没有队列。
+#### Can we not simply make network delays predictable?
