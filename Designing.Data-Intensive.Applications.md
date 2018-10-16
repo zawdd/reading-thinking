@@ -476,3 +476,37 @@ query请求的结果，其他事务会修改，导致outdate，如果事务中�
 ### Synchronous Versus Asynchronous Networks
 为什么不能在硬件上设计的使得网络有一个最大延迟，并且不会丢包呢？这样软件不久很好设计了么？（困难并没有转移吧，硬件依然有和软件相同的困难，而且有的环境还不需要这样大代价的硬件）电话网络是一个这样可信的网络，连接建立的时候就分出来了一部分给这个连接的带宽资源，这样通信的连接数目就会有限制。这种网络叫做同步网络，网络中没有队列。
 #### Can we not simply make network delays predictable?
+以太网IP是为了传输的数据量尽可能大而设计的，就像CPU分配给每个线程的时间片一样，是动态的，而不是固定的，都是为了处理的数据量最高，
+### Unreliable Clocks
+时间是不好精准测定的，两个请求到达同一台机器的顺序也是不好确定的
+### Monotonic Versus Time-of-Day Clocks
+* Time-of-day clocks
+就是自1970.1.1开始的秒数，会变化，不同的机器会不同
+* Monotonic clocks
+稳定的测量一段时间，只会向前，用来统计执行时间。时间的绝对值并没有意义。可以改变该始终的计时频率
+### Clock Synchronization and Accuracy
+NTP服务器会有各种问题，闰秒问题，
+### Relying on Synchronized Clocks
+软件设计中要考虑到时间这个因素也是不可靠的
+* Timestamps for ordering events
+时间不同步会导致基于时间戳的操作处理顺序产生错误（比如last write win），解决方式通常是增加版本向量。采用logical clocks，自增的一个计数器，来控制时间的顺序。
+* Clock readings have a confidence interval
+读取的时间是有一个置信度的，GPS接收器，原子钟都是更精确的计时设备，google的spanner中采用了带有置信度的local clock，会返回最早和最晚时间，（基于这种不精确的时间，返回可以设计一个时间上可信的系统- -）
+* Synchronized clocks for global snapshots
+如何产生一个全局的自增事务ID？首先，如果时钟可信，可以利用时间戳，比如spanner，它在提交一个事务的时候会故意等一个时间片，从而配合上时间范围的置信区间，就可以明确两个事务的先后关系，为了让这个故意等待的时间片尽可能短，就要求返回的时间置信区间尽可能窄，每个数据中心都配置了GPS接收器或者原子钟，保证时间的同步在7ms以内
+### Process Pauses
+一个节点如何知道自己仍然是leader？采用lease租约(leader获得其他节点给的租约)。由于进程暂停（GC，虚拟机实例漂移，线程上下文切换，IO暂停），有可能刚验证过租约的代码通过后，后面真正执行时租约已经失效了。
+* Response time guarantees
+真正的实时系统要保证每一个请求有严格的响应时间，会设置一个上线，real time并不见得吞吐性能高，反而会更差，但是对于某些安全系统，嵌入式体统是必须的。
+* Limiting the impact of garbage collection
+把GC看成一个计划下的行为，当有节点要进行GC时，就不给他发请求，这样整个系统看起来就是不会GC的。用于要求低延迟的系统。简单的做法就是要full gc时就重启实例。
+### Knowledge, Truth, and Lies
+基于一定的假设，我们就能基于不稳定的系统构建一个可信的系统
+### The Truth Is Defined by the Majority
+一个节点是不能真实的判断自己的情况的（GC，断网），所以一个分布式系统也不能信任一个节点
+#### The leader and the lock
+一个leader可能不是leader了，但是他自己还相信自己是，就会出问题。对于lock，lease都有此问题。利用fencing技术可以解决。每次写操作带上token，或者说版本好，即使第一个node获取了lease后，被别的节点先写了，后续再写时由于token号比已经写入的token号小，于是就会被拒绝。
+在ZK中，事务id zxid和版本id cversion可以当作这个fencing token
+### Byzantine Faults
+上述假设node is truth如果node会欺骗，那分布式系统的问题就更多了。这种就叫做拜占庭错误，比如航空系统中，由于辐射内存中的数据会变化。一个系统中由多个组织构成，有的想要欺骗其他人。比如P2P，bitcoin就是避免相信一个节点的数据。解决这个问题代价太大，一般不用考虑。程序中的bug导致的拜占庭错误，解决算法也帮助不了解决问题，因为一般算法大都要求有三分之二的节点是对的，而bug影响全部。
+### System Model and Realityd
