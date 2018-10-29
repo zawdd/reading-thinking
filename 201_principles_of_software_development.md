@@ -11,7 +11,7 @@
 * 质量是第一位的
 即使短期内看，按时上线是政治正确的，但是其牺牲了中长期了利益。对于质量没有什么可权衡了，必须要保证。应该把质量保证做如激励和奖励的机制中去。要say no，当需要跳过测试，忽略bug，在有完整的设计前就开始开发时。
 * 思考
-**首先，要区分什么是质量问题，为了快速迭代，原型的开发去掉了一些功能，等并不是质量问题。其次，软件中的bug是不可避免的，我们要解决我们发现的问题，但是没发现的问题我们也解决不了，不能认为我们按照了质量工程流程的要求做了该做的，就没有质量问题了，依然要准备好出了质量问题的预案。最后，如果我认为质量还是会有trade off的，如果保证质量的代价，大于出了质量问题的代价，那么或许就不值得了，比如密码学中不需要绝对的安全，只需要破解的代价足够大就可以了，当然显示时间的代价，不是计算机中的时间复杂度那样可以明确量化衡量的，有一些软件的质量问题，比如会造成人死亡，你就无法明确其代价是多少。那日常工作中我们该怎么办呢，预先定好质量保证的方案和流程，广泛进行讨论后通过，然后严格按照流程去执行，不要偷工减料，最大程度的尽人事，然后听天命。**
+**首先，要区分什么是质量问题，为了快速迭代，原型的开发去掉了一些功能，等并不是质量问题。其次，软件中的bug是不可避免的，我们要解决我们发现的问题，但是没发现的问题我们也解决不了，不能认为我们按照了质量工程流程的要求做了该做的，就没有质量问题了，依然要准备好出了质量问题的预案。最后，如果我认为质量还是会有trade off的，如果保证质量的代价，大于出了质量问题的代价，那么或许就不值得了，比如密码学中不需要绝对的安全，只需要破解的代价足够大就可以了，当然现实时间的代价，不是计算机中的时间复杂度那样可以明确量化衡量的，有一些软件的质量问题，比如会造成人死亡，你就无法明确其代价是多少。那日常工作中我们该怎么办呢，预先定好质量保证的方案和流程，广泛进行讨论后通过，然后严格按照流程去执行，不要偷工减料，最大程度的尽人事，然后听天命。**
 
 ### principle 2: quality is in the eyes of the beholder
 >There is no one definition of software quality. To developers ,it might be an elegant design or elegant code. To users ,who work in stress environments,it might be response time or high capacity. For cost-sensitive projects, it might be low development cost. For some customers, it might be satisfying all their perceived and not-yet-perceived needs. The dilemma is that these may not be all compatible. Optimizing one persons quality might be detrimental to anothers.(This is Weinberg’s”Political Dilemma”principle. )A project must decide on its priorities and articulate them to all parties.
@@ -19,7 +19,7 @@
 * 质量是旁观者的眼睛
 软件质量并没有明确的定义，对于开发者可能是优雅的代码和设计，对于负载压力大的用户意味着高性能的请求响应，对于高预算的项目意味着开发价格更便宜，对于有些客户意味着满足他们的提出的和未提出的需求。困难的是这些无法全部实现，满足一部分人的需求，就会牺牲其他人的需求，一个项目必须要决定它的优先事项，并且告知所有人。
 * 思考
-**这一步最好在项目开始的时候就进行，把为了满足那一方的利益牺牲了什么利益都讲清楚，比如把压缩工期的可能会导致的质量问题，功能减少问题就提前告知PM，告知经理，如果能够达成一致就继续。凡事都不可能一开始都设计好，出现问题也要即使的反馈，及早的告知有影响的参与方，让他们知道自己的某项预期达不到了，早有准备。根据这本树的原则看，质量应该是最不能被牺牲的一个维度**
+**这一步最好在项目开始的时候就进行，把为了满足那一方的利益牺牲了什么利益都讲清楚，比如把压缩工期的可能会导致的质量问题，功能减少问题就提前告知PM，告知经理，如果能够达成一致就继续。凡事都不可能一开始都设计好，出现问题也要即使的反馈，及早的告知有影响的参与方，让他们知道自己的某项预期达不到了，早有准备。根据这本书的原则看，质量应该是最不能被牺牲的一个维度**
 
 ### principle 3: productivity and quality are inseparable
 >There is a clear relationship between productivity(measured by numbers of widgits–whether they be lines of code or function points–per person month)and quality. The higher the demand for quality, the lower your productivity becomes. The lower the demand for quality, the higher your productivity becomes. The more you emphasize increased productivity, the lower your resulting quality. Bell Labs has found that, to achieve one to two bugs per thousand lines of code, productivities of 150 to 300 lines of code per person-month are common [see Fleckenstein, W,”Challenges in Software Development, ” IEEE Computer, 16, 3(March 1983), Pp 60-64].As attempts are made to drive productivity up ,the density of bugs increases.
@@ -351,7 +351,108 @@ As a developer, be aware of the techniques that have been demon-strated to incre
 
 ### principle 46:avoid design in requirements
 * 避免在需求分许时提前开始系统设计
+需求阶段的目的是指出系统额外的行为。额外的行为需要非常明确，以让不同的设计师都能达到一致。需求的时候不能明确软件的架构或者算法，这是设计人员要负责的事情。如果写需求的人发现很难明确额外的行为，除非用一些看起来是设计的东西，比如状态机等。需求人员应该给设计人员提示
 
+* 思考
+**自己经常一边分析需求，一边就陷入设计中。应该把这两件事分开，讨论需求时先不要想要怎么做，甚至都不用考虑能不能做。先明确想做什么，做出来的东西能有什么功能。然后再看下一步。只不过一个人负责这两部分时，往往分的没那么开。**
 
-### principle 60:
+### principle 47:use the right techniques
+* 使用正确的技术
+没有万能的技术适合任何应用的需求分析，复杂系统的需求分析要用多种技术。比如，使用entity-relation diagrams设计数据密集型的应用。有限状态机分析交互式实时系统。Petri nets针对同步性的挑战，决策表用来分析决策密集型的应用。
+
+* 思考
+**平时自己的确很少用到上述方法来分析，一般都是文字描述需求，对于复杂的系统还是要借助一些形式化的手段，使得信息的表达更清晰**
+
+### principle 48:use multiple views of requirements
+* 利用需求的多面视角
+从任何一面看需求，都是不够的，不能完全理解这个复杂系统的一些额外的行为的。要综合利用结构分析，面向对象分析，状态表分析等手段。比如面向对象，对真实世界进行分析，让你明白对象之间的关系和相关属性。利用有限状态机来表述用户接口的行为。用决策树来描述系统响应复杂的条件组合的请求时的结果。
+
+* 思考
+**需要在实践中加深印象，不过互联网公司追求快速，对需求分析的文档要求的就更不严格了。要结合实际，精炼的表达需求，也不要太拘泥形式**
+
+### principle 49:organize requirements sensibly
+* 合理的组织需求
+我们通常会水平的组织需求。组织需求要便于别人阅读需求，便于修改人定位需求，进行修改。要依据不同的产品采用不同的组织方法。可以按照应用中的参与方，来组织，比如用户，商家。也可以按照大的功能来拆分描述。
+
+* 思考
+**公司中的项目往往一个个的都很小，组织形式都是按照Web页面上的功能划分来写的**
+
+### principle 50:prioritize requirements
+* 区分需求的优先级
+并不是所有的需求都一样重要。一个方法是给每个需求加上前缀。M mandatory，D desirable， O optional。更好的方法是分0-10级。
+
+* 思考
+**工作中应用的尤其多，主要就就是解决资源和需求的不匹配。一般能分成两个优先级就可以了。**
+
+### principle 51:write concisely
+* 需求要写的简明
+
+* 思考
+**结合前面的一条，不要加上各种修辞要用相同的话术表达相同的概念。**
+
+### principle 52:separately number every requirement
+* 给每个需求编号
+每个需求都要能被简单的索引，这有助于后续的设计和测试阶段。简单的做法就是每个需求加一个独一无二的TAG，或者每个段落，句子用字母编号。然后可以自动化的解析这些标记
+
+* 思考
+**后续测试时的case list，就是要对应上前面的每个需求，这样就便于把case list和需求关联起来，明白有什么功能没测试到。所以能不能用excel来写需求文档？**
+
+### principle 53:reduce ambiguity in requirements
+* 减少需求中的歧义
+大多数需求用自然语言来书写，而长用的词，或句子很容易有歧义。只有使用正规的语言才能消除歧义，平时也可以通过重写有歧义的段落来消除歧义。有以下三个方法消除歧义：1.利用fagan-type检查SRS。2.利用正式的模型来重写需求中的问题。3.重新组织SRS，使得自然语言和正规模型写的部分分开。
+
+* 思考
+**工作中没有这么复杂的需求文档，一般都是开发人员再次复述确认下需求。或者可以让客户再次复述下需求文档的意思，看是不是书写文档人的本意。这里的问题就在于，一般只有认为有问题的才会确认，有的你可能认为自己理解的就是对的，于是就不会再确认。所以需求文档的描述还是尽量要规范，这样也减少沟通的成本。**
+
+### principle 54:augment, never replace, natural language
+* 增加而不是替代原来的需求描述
+在减少需求文档中的歧义时，一般会利用概念，定义来替代自然语言，比如利用状态机，预判逻辑，状态表等。但是这样整个需求文档就会让其他人不太容易理解，比如哪些有很少计算机科学知识，数学背景的人。解决的方法就是同时保留原来自然语言描述的需求。可以用一页的正反两面来分别描述。这样其他人也能读的懂
+
+* 思考
+**文档一方面是让专业的人读，有的时候也会有非专业的人读，尤其是面对普通客户时，要让两者都能看得懂，明白你的需求，这样才能知道写的对不对。**
+
+### principle 55:write natural language before a more formal model
+* 在采用格式化的模型描述需求前，先用自然语言写
+如果先用正规的模型去描述了需求，那么后续的自然语言描述就会倾向于去描述这个模型，而不是描述解决问题的系统了。本末倒置。最好的方法是，1.先用自然语言描述2，再用模型描述，3，再调整自然语言的描述以减少歧义。
+
+* 思考
+**需求文档要描述系统的功能，切记为了形式化本末倒置。**
+
+### principle 56:keep the requirements specification readable
+* 保证需求文档是可读的
+需求文档需要让大部分人和组织都能读懂，比如用户，客户，市场人员，设计师 ，测试者等。并且让这些人都要充分理解系统的功能。创建多版本的需求文档以给不同的人，最大的挑战就是要保持他们之间的版本一致。一个有效的方法是，始终维护自然语言描述的版本，并在上面加上其他参与方所需要的描述维度。
+
+* 思考
+**还是那句话，要考虑到文档的受众，不能想当然的以为自己能看懂就好，我们日常写PPT时也有这种问题**
+
+### principle 57:specify reliability specifically
+* 明确可靠性
+软件的可靠性是比较难以定义的，不要把可靠性定义的不明确，比如可靠性99%这种，要明确到，从请求数量上失败发生的概率，系统down调的时间百分比等。
+
+* 思考
+**除了功能要写到需求里，性能也要写到，有些东西只有功能能用，性能不满足，同样无法应用。如果写了性能的需求，那就要写明确。比如不能只写平均响应时间，还要写99分位，99.9分位要到多少，作为客户量巨大的互联网公司，小概率上的极端情况同样会影响到不少用户。**
+
+### principle 58:specify when environment  violates “acceptable” behavior
+* 明确当环境变的可用这行为的含义
+需求文档通常会写系统工作的环境。这个环境的定义会影响到设计，开发人员。当环境和预期不一样时部署会有什么问题？当环境变化，报告流量超过当初设计的预期时。不能让系统crash，出错，或者静默的忽略额外的流量。要在系统定义中明确环境不是预期了会有怎样的效果。
+
+* 思考
+**作为公司企业，一个简单的方法就是保证自己的服务器，环境是相同的，线上线下都一样。但是作为用户侧的环境就要通过广泛的测试来保证了。流量的增长也可以看作是一种环境的变化。我们应该不能预先知道所有的非预期情况，所以必要时还是要打出错日志，报错误信息的。当然文档中写明白最好，比如“除以0的行为是未定义的”。**
+
+### principle 59:self-destruct tbd's(To Be Determined)
+* 干掉需求文档中的"后续确定"
+需求文档中通常有许多“后续确定”的地方，这样的文档显然是不完善的。当然这也是有意义的，就是当文档的精确度对基础设计没有什么太大影响的时候。当写一个TBD时就要写上注释，谁后续在何时会补充完整他。
+
+* 思考
+**合理的写TO DO，每次邮件明确TODO由谁，在何时来完成。同时要有后续检查的机制，这一点很多时候往往做不到，没有监督，这些TODO后续就费了，也让这套机制整体不Work。导致把复杂的问题都往后抛，所以也不能滥用，有的会议上就是为了确定问题的，不能再TODO了。**
+
+### principle 60:store requirements in a Databases
+* 把需求文档写到数据库中
+需求文档是复杂和易变的，存在数据库中便于改变，记录每个需求的特征。比如保存每个需求功能的TAG，便于检索。需求的内容，和其他需求功能的联系，优先级，预期的变动。在那个版本开发了该需求等等。理想情况下需求文档就是数据库的dump。
+
+* 思考
+**目前公司中的需求都是一个个的word，都要靠自己管理，这方面由于每个需求拆的比较小，所以往往也不是痛点。现在也已经和一些工作流的软件进行了结合，但是感觉需求本身确实可以做一个管理系统，明确的知道那一次上线，上了什么功能。**
+
+## chapter 4: design principles 设计原则
+
 ### principle 86:
