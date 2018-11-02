@@ -509,4 +509,4 @@ NTP服务器会有各种问题，闰秒问题，
 在ZK中，事务id zxid和版本id cversion可以当作这个fencing token
 ### Byzantine Faults
 上述假设node is truth如果node会欺骗，那分布式系统的问题就更多了。这种就叫做拜占庭错误，比如航空系统中，由于辐射内存中的数据会变化。一个系统中由多个组织构成，有的想要欺骗其他人。比如P2P，bitcoin就是避免相信一个节点的数据。解决这个问题代价太大，一般不用考虑。程序中的bug导致的拜占庭错误，解决算法也帮助不了解决问题，因为一般算法大都要求有三分之二的节点是对的，而bug影响全部。
-### System Model and Realityd
+### System Model and Reality
